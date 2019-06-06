@@ -1,0 +1,16 @@
+{application, master_wright,
+ [{description, "An AO2 Master Server"},
+  {vsn, "0.1.0"},
+  {registered, [master_wright]},
+  {mod, {master_wright_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    ranch
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["ISC"]},
+  {links, []}
+ ]}.
