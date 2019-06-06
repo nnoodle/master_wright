@@ -40,8 +40,7 @@ send_ct(Pid, Username, Message) ->
     gen_server:cast(Pid, {send_ct, Username, Message}).
 
 motd() ->
-    "Welcome to Attorney Online!
-This is the master server.".
+    "Welcome to Attorney Online!".
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -50,6 +49,8 @@ This is the master server.".
 init([Socket, Transport]) ->
     io:format("CONNECTION: ~p (pid: ~p)~n", [Transport:peername(Socket), self()]),
     %% timeout is handled by master_wright_protocol
+    Transport:send(Socket, master_wright_netcode:encode([servercheok, "2.6.1"])),
+    Transport:send(Socket, master_wright_netcode:encode(['AO2CHECK', "0.0.0"])),
     {ok, #state{socket = Socket, transport = Transport}, infinity}.
 
 handle_call(advert, _From, #state{advert=Advert}=State) ->
@@ -79,10 +80,11 @@ handle_cast({ct, [Username, Message | _]}, State) ->
         Enabled ->
             lists:foreach(
               fun ({_,Pid,_,_}) ->
-                      if
-                          Pid =/= self() -> send_ct(Pid, Username, Message);
-                          true -> ok
-                      end
+                      %% if
+                      %%     Pid =/= self() -> send_ct(Pid, Username, Message);
+                      %%     true -> ok
+                      %% end
+                      send_ct(Pid, Username, Message)
               end,
               supervisor:which_children(master_wright_client_sup));
        true ->
@@ -126,6 +128,9 @@ handle_cast({unknown, _}, State) ->
 % internal
 handle_cast({send_ct, Username, Message}, ?STATE) ->
     Transport:send(Socket, master_wright_netcode:encode(['CT', Username, Message])),
+    {noreply, State};
+handle_cast(check, ?STATE) ->
+    Transport:send(Socket, master_wright_netcode:encode('CHECK')),
     {noreply, State};
 handle_cast(doom, ?STATE) ->
     Transport:send(Socket, master_wright_netcode:encode('DOOM')),
