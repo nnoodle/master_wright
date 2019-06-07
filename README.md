@@ -13,7 +13,7 @@ $ rebar3 compile
 configuration is done through editing the `config/sys.config` file.
 
 ```erlang
-%% what a sys.config might look like
+%%% sys.config --                          -*- mode: erlang -*-
 [
  {master_wright,
   [{num_acceptors, 10},                    % number of process that accept connections
@@ -24,8 +24,8 @@ configuration is done through editing the `config/sys.config` file.
   ]},
  %% options for Mnesia, an Erlang/OTP library master_wright uses
  {mnesia,
-  [{dir, "~/.cache/master_wright/Mnesia"}  % where to store database
-                                           % (defaults to the current directory)
+  [{dir, "/home/its-a-me/.cache/master_wright"}  % absolute path to database
+                                                 % (defaults to the current directory)
   ]}
 ].
 ```

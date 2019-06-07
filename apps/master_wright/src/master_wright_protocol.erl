@@ -17,7 +17,7 @@ init(Ref, Transport, _Opts = []) ->
          #state{pid=Pid, timeout=application:get_env(master_wright, timeout, 30*1000)}).
 
 %% @private
-loop(Socket, Transport, #state{pid=Pid, timeout=Timeout}=State) ->
+loop(Socket, Transport, #state{pid=Pid, timeout=_Timeout}=State) ->
     case Transport:recv(Socket, 0, infinity) of
         {ok, Data} ->
             master_wright_client:recv(Pid, master_wright_netcode:decode(Data)),

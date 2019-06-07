@@ -102,34 +102,39 @@ handle_cast({ct, [Username, Message | _]}, State) ->
     {noreply, State};
 handle_cast({scc, [Port, Name, Description, Agent | _]}, ?STATE) ->
     {ok, {Ip, _}} = Transport:peername(Socket),
+    Advert = #advert{port=Port,
+                     name=Name,
+                     description=Description,
+                     ip=inet:ntoa(Ip),
+                     agent=Agent},
+    master_wright_listing:add(Advert),
     Transport:send(Socket, master_wright_netcode:encode(['PSDD', 0])),
-    {noreply, State#state{advert=#advert{port=Port,
-                                         name=Name,
-                                         description=Description,
-                                         ip=inet:ntoa(Ip),
-                                         agent=Agent}}};
+    {noreply, State#state{advert=Advert}};
 handle_cast({hi, [HDID | _]}, State) ->
     {noreply, State#state{hdid=binary_to_list(HDID)}};
 handle_cast({all, _}, ?STATE) ->
-    Servers = lists:foldl(
-                fun ({_,Pid,_,_}, Acc) ->
-                        if self() =/= Pid ->
-                                case gen_server:call(Pid, advert, 3000) of
-                                    {ok, {_, Port,Name,Desc,Ip,_}} -> [{Name, Desc, Ip, Port} | Acc];
-                                    _ -> Acc
-                                end;
-                           %% when self() == Pid
-                           State#state.advert =/= undefined ->
-                                {_, Port,Name,Desc,Ip,_} = State#state.advert,
-                                [{Name,Desc,Ip,Port} | Acc];
-                           true -> Acc
-                        end
-                end, [], supervisor:which_children(master_wright_client_sup)),
+    Servers = master_wright_listing:all(),
     Transport:send(Socket, master_wright_netcode:encode(
                              case length(Servers) of
                                  0 -> 'ALL';
                                  _ -> ['ALL' | Servers]
                              end)),
+    {noreply, State};
+handle_cast({askforservers, _}, ?STATE) ->
+    case master_wright_listing:first() of
+        {ok, {Port, Name, Desc, Ip, Agent}} ->
+            Transport:send(Socket, master_wright_netcode:encode(
+                                     ['SN', 0, Ip, Agent, Port, Name, Desc]));
+        _ -> noop
+    end,
+    {noreply, State};
+handle_cast({sr, [I | _]}, ?STATE) ->
+    case master_wright_listing:nth(I) of
+        {ok, {Index, {Port, Name, Desc, Ip, Agent}}} ->
+            Transport:send(Socket, master_wright_netcode:encode(
+                                     ['SN', Index, Ip, Agent, Port, Name, Desc]));
+        _ -> noop
+    end,
     {noreply, State};
 handle_cast({unknown, _}, State) ->
     {noreply, State};
@@ -180,9 +185,9 @@ client_header_to_atom(Header) ->
         <<"HI">> -> hi;
         <<"SCC">> -> scc;
         <<"ALL">> -> all;
-        %% TODO
-        %% <<"SR">> -> sr;
-        %% <<"SN">> -> sn;
+        %% AO1 deprecated(?) serverlist calls
+        <<"askforservers">> -> askforservers;
+        <<"SR">> -> sr;
         _ -> unknown
     end.
 

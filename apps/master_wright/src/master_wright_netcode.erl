@@ -20,4 +20,5 @@ encode(Datum) ->
     iolist_to_binary(lists:flatten(lists:map(Func, Datum)) ++ "%").
 
 decode(Data) ->
+    %% we don't need to deal with &
     lists:droplast(binary:split(Data, <<"#">>, [global])).
