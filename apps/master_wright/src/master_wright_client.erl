@@ -3,8 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, spawn/2, recv/2, send_ct/3, doom/1,
-        motd/0]).
+-export([start_link/2, spawn/2, recv/2, send_ct/3, ban/1, list/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -33,26 +32,38 @@ recv(_Pid, Data) ->
     io:format("DATA: ~p~n", [Data]),
     ok.
 
-doom(Pid) ->
+ban(Pid) ->
     gen_server:cast(Pid, doom).
+
+list() ->
+    lists:map(fun ({_,Pid,_,_}) ->
+                      {ok, Ip, Hdid} = gen_server:call(Pid, ids),
+                      {Pid, Ip, Hdid}
+              end,
+              supervisor:which_children(master_wright_client_sup)).
 
 send_ct(Pid, Username, Message) ->
     gen_server:cast(Pid, {send_ct, Username, Message}).
-
-motd() ->
-    "Welcome to Attorney Online!".
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 init([Socket, Transport]) ->
-    io:format("CONNECTION: ~p (pid: ~p)~n", [Transport:peername(Socket), self()]),
-    %% timeout is handled by master_wright_protocol
-    Transport:send(Socket, master_wright_netcode:encode([servercheok, "2.6.1"])),
-    Transport:send(Socket, master_wright_netcode:encode(['AO2CHECK', "0.0.0"])),
-    {ok, #state{socket = Socket, transport = Transport}, infinity}.
+    {ok, {Ip, _}}= Transport:peername(Socket),
+    io:format("CONNECTION: ~p (pid: ~p)~n", [Ip, self()]),
+    case master_wright_ban:is_banned(Ip) of
+        {ok, true} -> {stop, banned};
+        _ ->
+            Transport:send(Socket, master_wright_netcode:encode([servercheok, "2.6.1"])),
+            Transport:send(Socket, master_wright_netcode:encode(['AO2CHECK', "0.0.0"])),
+            %% timeout is handled by master_wright_protocol
+            {ok, #state{socket = Socket, transport = Transport}, infinity}
+        end.
 
+handle_call(id, _From, ?STATE) ->
+    {ok, {Ip, _}} = Transport:peername(Socket),
+    {reply, {ok, Ip}, State};
 handle_call(advert, _From, #state{advert=Advert}=State) ->
     {reply, {ok, Advert}, State};
 handle_call(Request, _From, State) ->
@@ -67,7 +78,8 @@ handle_cast({ping, _}, ?STATE) ->
                              end)),
     {noreply, State};
 handle_cast({id, [_Agent, _Version | _]}, State) ->
-    send_ct(self(), ?AOMS, motd()),
+    send_ct(self(), ?AOMS,
+            application:get_env(master_wright, motd, "Welcome to Attorney Online!")),
     {noreply, State};
 handle_cast({vc, _}, ?STATE) ->
     Transport:send(Socket, master_wright_netcode:encode(['SV', "master_wright"])),
@@ -80,10 +92,6 @@ handle_cast({ct, [Username, Message | _]}, State) ->
         Enabled ->
             lists:foreach(
               fun ({_,Pid,_,_}) ->
-                      %% if
-                      %%     Pid =/= self() -> send_ct(Pid, Username, Message);
-                      %%     true -> ok
-                      %% end
                       send_ct(Pid, Username, Message)
               end,
               supervisor:which_children(master_wright_client_sup));
@@ -133,10 +141,11 @@ handle_cast(check, ?STATE) ->
     Transport:send(Socket, master_wright_netcode:encode('CHECK')),
     {noreply, State};
 handle_cast(doom, ?STATE) ->
+    {ok, {Ip, _}} = Transport:peername(Socket),
+    {atomic, ok} = master_wright_ban:add(Ip),
     Transport:send(Socket, master_wright_netcode:encode('DOOM')),
-    {noreply, State};
-handle_cast(Request, State) ->
-    io:format("CAST: ~p~n", [Request]),
+    {stop, banned, State};
+handle_cast(_Request, State) ->
     {noreply, State}.
 
 handle_info(timeout, State) ->
@@ -161,9 +170,7 @@ format_status(_Opt, Status) ->
 %%% Internal functions
 %%%===================================================================
 
-
 %% @private
-%% @doc we need this to drop any malicious headers, if any.
 client_header_to_atom(Header) ->
     case Header of
         <<"PING">> -> ping;

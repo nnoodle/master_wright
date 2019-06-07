@@ -1,4 +1,3 @@
-%%%-------------------------------------------------------------------
 -module(master_wright_app).
 -behaviour(application).
 
@@ -16,6 +15,7 @@ start(_StartType, _StartArgs) ->
                   max_connections => application:get_env(master_wright, max_connections, 1024),
                   socket_opts => [{port, application:get_env(master_wright, port, 27016)}]},
                 master_wright_protocol, []),
+    master_wright_ban:init(),
     master_wright_client_sup:start_link().
 
 stop(_State) ->
